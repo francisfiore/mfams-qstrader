@@ -2,13 +2,14 @@ import os
 import sys
 
 import pandas as pd
+import pymysql
 
 from ..price_parser import PriceParser
 from .base import AbstractBarPriceHandler
 from ..event import BarEvent
 
 
-class YahooDailyCsvBarPriceHandler(AbstractBarPriceHandler):
+class MySQLRemoteBarPriceHandler(AbstractBarPriceHandler):
     """
     YahooDailyBarPriceHandler is designed to read CSV files of
     Yahoo Finance daily Open-High-Low-Close-Volume (OHLCV) data
@@ -16,7 +17,9 @@ class YahooDailyCsvBarPriceHandler(AbstractBarPriceHandler):
     the provided events queue as BarEvents.
     """
     def __init__(
-        self, csv_dir, events_queue,
+        self, domain,
+        username, password,
+        events_queue,
         init_tickers=None,
         start_date=None, end_date=None,
         calc_adj_returns=False
@@ -26,7 +29,16 @@ class YahooDailyCsvBarPriceHandler(AbstractBarPriceHandler):
         list of initial ticker symbols then creates an (optional)
         list of ticker subscriptions and associated prices.
         """
-        self.csv_dir = csv_dir
+        self.domain = domain
+        self.username = username
+        self.password = password
+
+        self.connection = pymysql.connect(host='mfamsdata.ceymbxq2hgua.us-east-1.rds.amazonaws.com',
+                                          user='braceal',
+                                          password='Password123',
+                                          port=3306,
+                                          db='mfamsdb')
+
         self.events_queue = events_queue
         self.continue_backtest = True
         self.tickers = {}
@@ -41,12 +53,35 @@ class YahooDailyCsvBarPriceHandler(AbstractBarPriceHandler):
         if self.calc_adj_returns:
             self.adj_close_returns = []
 
+        # not a permanent solution
+        self.connection.close()
+
     def _open_ticker_price_csv(self, ticker):
         """
         Opens the CSV files containing the equities ticks from
         the specified CSV data directory, converting them into
         them into a pandas DataFrame, stored in a dictionary.
         """
+        try:
+            sql_query = 'SELECT * FROM stock_data WHERE symbol="AAPL"'
+            self.tickers_data[ticker] = pd.read_sql(sql_query, con=self.connection,
+                                                    parse_dates=['timestamp'],
+                                                    index_col='timestamp',
+                                                    columns=['timestamp', 'open', 'close', 'high', 'low', 'volume'])        
+        except Exception:
+            print('failed')
+
+        self.tickers_data[ticker].rename(columns={'timestamp': 'Date',
+                                                  'open': 'Open',
+                                                  'close': 'Close',
+                                                  'high': 'High',
+                                                  'low': 'Low',
+                                                  'volume': 'Volume'},
+                                         inplace=True)
+        print(self.tickers_data[ticker].head())
+        self.tickers_data[ticker]['Adj Close'] = self.tickers_data[ticker]['Close']
+
+        '''
         ticker_path = os.path.join(self.csv_dir, "%s.csv" % ticker)
         self.tickers_data[ticker] = pd.io.parsers.read_csv(
             ticker_path, header=0, parse_dates=True,
@@ -55,6 +90,7 @@ class YahooDailyCsvBarPriceHandler(AbstractBarPriceHandler):
                 "Close", "Volume", "Adj Close"
             )
         )
+        '''
         self.tickers_data[ticker]["Ticker"] = ticker
 
     def _merge_sort_ticker_data(self):
@@ -171,9 +207,7 @@ class YahooDailyCsvBarPriceHandler(AbstractBarPriceHandler):
             return
         # Obtain all elements of the bar from the dataframe
         ticker = row["Ticker"]
-        print(row)
-        sys.exit()
-        period = 86400  # Seconds in a day
+        period = 60  # Seconds in a minute
         # Create the tick event for the queue
         bev = self._create_event(index, period, ticker, row)
         # Store event

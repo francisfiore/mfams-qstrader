@@ -14,6 +14,7 @@ eggs
 parts
 private_files
 bin
+env
 var
 sdist
 develop-eggs

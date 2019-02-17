@@ -40,7 +40,9 @@ class ExampleCompliance(AbstractCompliance):
             "commission"
         ]
         fname = os.path.expanduser(os.path.join(self.config.OUTPUT_DIR, self.csv_filename))
-        with open(fname, 'a') as csvfile:
+        #if not os.path.exists(fname):
+        #    os.
+        with open(fname, 'a+') as csvfile:
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
 

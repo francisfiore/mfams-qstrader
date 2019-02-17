@@ -635,6 +635,7 @@ class TearsheetStatistics(AbstractStatistics):
 
         # Plot the figure
         plt.show(block=False)
+        plt.savefig('plot.png')
 
         if filename is not None:
             fig.savefig(filename, dpi=150, bbox_inches='tight')
