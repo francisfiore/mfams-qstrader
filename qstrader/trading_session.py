@@ -64,7 +64,10 @@ class TradingSession(object):
         """
         if self.price_handler is None and self.session_type == "backtest":
             self.price_handler = MySQLRemoteBarPriceHandler(
-                'mfamsdata.ceymbxq2hgua.us-east-1.rds.amazonaws.com', 'mfamsadmin', 'WcxCrEbp30pE2eHs', self.events_queue,
+                self.config['mysql']['domain'], self.config['mysql']['port'],
+                self.config['mysql']['username'], self.config['mysql']['password'],
+                self.config['mysql']['db'],
+                self.events_queue,
                 self.tickers, start_date=self.start_date,
                 end_date=self.end_date
             )

@@ -17,27 +17,25 @@ class MySQLRemoteBarPriceHandler(AbstractBarPriceHandler):
     the provided events queue as BarEvents.
     """
     def __init__(
-        self, domain,
-        username, password,
+        self, domain, port,
+        username, password, db,
         events_queue,
         init_tickers=None,
         start_date=None, end_date=None,
         calc_adj_returns=False
     ):
         """
-        Takes the CSV directory, the events queue and a possible
+        Takes the MySQL server information, the events queue and a possible
         list of initial ticker symbols then creates an (optional)
         list of ticker subscriptions and associated prices.
         """
         self.domain = domain
+        self.port = port
         self.username = username
         self.password = password
+        self.db = db
 
-        self.connection = pymysql.connect(host='mfamsdata.ceymbxq2hgua.us-east-1.rds.amazonaws.com',
-                                          user='braceal',
-                                          password='Password123',
-                                          port=3306,
-                                          db='mfamsdb')
+        self._open_connection()
 
         self.events_queue = events_queue
         self.continue_backtest = True
@@ -53,7 +51,29 @@ class MySQLRemoteBarPriceHandler(AbstractBarPriceHandler):
         if self.calc_adj_returns:
             self.adj_close_returns = []
 
-        # not a permanent solution
+        self._close_connection()
+
+    def _open_connection(self):
+        """
+        Connects to the database. Returns true if succeeds, false otherwise.
+        """
+        try:
+            self.connection = pymysql.connect(host=self.domain,
+                                              user=self.username,
+                                              password=self.password,
+                                              port=self.port,
+                                              db=self.db)
+        except pymysql.Error as error:
+            print(error)
+            print('[MySQLRemoteBarPriceHandler] : Failed to connect to `{}`'.format(self.db))
+            return False
+        return True
+
+
+    def _close_connection(self):
+        """
+        Closes database connection. Assumes there is an open connection.
+        """
         self.connection.close()
 
     def _open_ticker_price_csv(self, ticker):
@@ -63,13 +83,21 @@ class MySQLRemoteBarPriceHandler(AbstractBarPriceHandler):
         them into a pandas DataFrame, stored in a dictionary.
         """
         try:
+            # open a new connection if there isn't one open
+            opened_new_connection = False
+            if not self.connection.open:
+                opened_new_connection = True
+                self._open_connection()
+
             sql_query = 'SELECT * FROM stock_data WHERE symbol="AAPL"'
             self.tickers_data[ticker] = pd.read_sql(sql_query, con=self.connection,
                                                     parse_dates=['timestamp'],
                                                     index_col='timestamp',
-                                                    columns=['timestamp', 'open', 'close', 'high', 'low', 'volume'])        
-        except Exception:
-            print('failed')
+                                                    columns=['timestamp', 'open', 'close', 'high', 'low', 'volume'])
+            if opened_new_connection:
+                self._close_connection()      
+        except Exception as e:
+            print(e)
 
         self.tickers_data[ticker].rename(columns={'timestamp': 'Date',
                                                   'open': 'Open',
@@ -78,19 +106,10 @@ class MySQLRemoteBarPriceHandler(AbstractBarPriceHandler):
                                                   'low': 'Low',
                                                   'volume': 'Volume'},
                                          inplace=True)
-        print(self.tickers_data[ticker].head())
+        # temporary fix for bad db design lol
+        # TODO: fix db & replace
         self.tickers_data[ticker]['Adj Close'] = self.tickers_data[ticker]['Close']
 
-        '''
-        ticker_path = os.path.join(self.csv_dir, "%s.csv" % ticker)
-        self.tickers_data[ticker] = pd.io.parsers.read_csv(
-            ticker_path, header=0, parse_dates=True,
-            index_col=0, names=(
-                "Date", "Open", "High", "Low",
-                "Close", "Volume", "Adj Close"
-            )
-        )
-        '''
         self.tickers_data[ticker]["Ticker"] = ticker
 
     def _merge_sort_ticker_data(self):
